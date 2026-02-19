@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import AuthPage from "./authpage";
+import AuthPage from "./AuthPage";
 import ExpenseTracker from "./ExpenseTracker";
 
 export default function App() {
