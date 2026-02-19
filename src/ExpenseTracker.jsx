@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from "react";
+import { db } from "./firebase";
+import { ref, set, onValue } from "firebase/database";
 
 const CATEGORIES = [
   { name: "Food & Dining",     icon: "🍜", color: "#FF6B6B", bg: "rgba(255,107,107,0.12)" },
@@ -112,19 +114,47 @@ function EmptyState() {
 }
 
 export default function ExpenseTracker({ user, onLogout }) {
-  const storageKey = `xp_v2_${user?.email || "guest"}`;
-  const [expenses, setExpenses] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(storageKey)) || []; } catch { return []; }
-  });
-  const [form, setForm] = useState({ title:"", amount:"", category:CATEGORIES[0].name, date:todayStr(), note:"" });
-  const [errors, setErrors] = useState({});
-  const [tab, setTab] = useState("dashboard");
+  const [expenses, setExpenses]   = useState([]);
+  const [dataLoaded, setDataLoaded] = useState(false);
+  const [dbReady, setDbReady]     = useState(false);
+  const [form, setForm]           = useState({ title:"", amount:"", category:CATEGORIES[0].name, date:todayStr(), note:"" });
+  const [errors, setErrors]       = useState({});
+  const [tab, setTab]             = useState("dashboard");
   const [filterCat, setFilterCat] = useState("All");
-  const [newId, setNewId] = useState(null);
-  const [deleteId, setDeleteId] = useState(null);
-  const [showMenu, setShowMenu] = useState(false);
+  const [newId, setNewId]         = useState(null);
+  const [deleteId, setDeleteId]   = useState(null);
+  const [showMenu, setShowMenu]   = useState(false);
 
-  useEffect(() => { localStorage.setItem(storageKey, JSON.stringify(expenses)); }, [expenses, storageKey]);
+  // ── Load from Firebase Realtime Database ──
+  useEffect(() => {
+    if (!user?.uid) return;
+    const expRef = ref(db, `users/${user.uid}/expenses`);
+    const unsub = onValue(expRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const arr = Object.values(data).sort((a,b) => b.id - a.id);
+        setExpenses(arr);
+      } else {
+        setExpenses([]);
+      }
+      setDataLoaded(true);
+      setDbReady(true);
+    });
+    return () => unsub();
+  }, [user?.uid]);
+
+  // ── Save to Firebase Realtime Database ──
+  useEffect(() => {
+    if (!user?.uid || !dataLoaded || !dbReady) return;
+    const expRef = ref(db, `users/${user.uid}/expenses`);
+    if (expenses.length === 0) {
+      set(expRef, null);
+    } else {
+      const obj = {};
+      expenses.forEach(e => { obj[e.id] = e; });
+      set(expRef, obj);
+    }
+  }, [expenses, user?.uid, dataLoaded, dbReady]);
 
   const total     = expenses.reduce((s,e)=>s+e.amount,0);
   const thisMonth = expenses.filter(e=>e.date?.slice(0,7)===todayStr().slice(0,7)).reduce((s,e)=>s+e.amount,0);
@@ -151,6 +181,16 @@ export default function ExpenseTracker({ user, onLogout }) {
   const catTotals = CATEGORIES.map(cat=>({...cat,total:expenses.filter(e=>e.category===cat.name).reduce((s,e)=>s+e.amount,0)})).filter(c=>c.total>0).sort((a,b)=>b.total-a.total);
   const initials = (user?.name||"U").split(" ").map(n=>n[0]).join("").toUpperCase().slice(0,2);
   const TABS = [{id:"dashboard",label:"Overview",icon:"⬡"},{id:"add",label:"Add New",icon:"+"},{id:"history",label:"History",icon:"≡"}];
+
+  if (!dataLoaded) return (
+    <div style={{ minHeight:"100vh", background:"#070710", display:"flex", alignItems:"center",
+      justifyContent:"center", color:"#555", fontFamily:"'Outfit',sans-serif", fontSize:14, flexDirection:"column", gap:12 }}>
+      <div style={{ width:32, height:32, border:"2px solid rgba(167,139,250,0.3)",
+        borderTopColor:"#A78BFA", borderRadius:"50%", animation:"spin 0.7s linear infinite" }}/>
+      <style>{`@keyframes spin{to{transform:rotate(360deg);}}`}</style>
+      Loading your data...
+    </div>
+  );
 
   return (
     <div className="root">
@@ -239,7 +279,7 @@ export default function ExpenseTracker({ user, onLogout }) {
           <div className="form-group">
             <label className="form-label">Title</label>
             <input className={`xp-input ${errors.title?"xp-input-err":""}`} placeholder="e.g. Dinner with friends"
-              value={form.title} onChange={e=>{setForm({...form,title:e.target.value});setErrors({...errors,title:""}); }}/>
+              value={form.title} onChange={e=>{setForm({...form,title:e.target.value});setErrors({...errors,title:""});}}/>
             {errors.title && <span className="err-msg">{errors.title}</span>}
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
@@ -326,7 +366,7 @@ body{margin:0;background:#070710;}
 .brand-name{font-size:19px;font-weight:900;letter-spacing:-0.5px;color:#fff;}
 .brand-sub{font-size:10px;color:#444;letter-spacing:1.5px;text-transform:uppercase;margin-top:1px;}
 .user-avatar{width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,rgba(167,139,250,0.6),rgba(78,201,255,0.5));border:2px solid rgba(167,139,250,0.4);color:#fff;font-size:13px;font-weight:900;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all 0.2s;font-family:'Outfit',sans-serif;}
-.user-avatar:hover{transform:scale(1.08);border-color:rgba(167,139,250,0.7)!important;}
+.user-avatar:hover{transform:scale(1.08);}
 .user-menu{position:absolute;top:48px;right:0;background:#111122;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:14px;min-width:200px;box-shadow:0 16px 48px rgba(0,0,0,0.5);z-index:100;}
 .user-menu-name{font-size:14px;font-weight:800;color:#fff;}
 .user-menu-email{font-size:11px;color:#555;margin-top:2px;word-break:break-all;}
@@ -378,7 +418,7 @@ textarea.xp-input{height:76px;resize:none;padding-top:13px;}
 .cat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
 .cat-chip{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:12px 6px;border-radius:14px;background:rgba(255,255,255,0.04);border:1.5px solid rgba(255,255,255,0.07);color:#666;cursor:pointer;transition:all 0.2s;font-family:'Outfit',sans-serif;}
 .cat-chip:hover{transform:scale(1.06);border-color:rgba(255,255,255,0.14)!important;color:#bbb!important;}
-.submit-btn{width:100%;padding:16px 24px;border-radius:16px;background:linear-gradient(135deg,rgba(167,139,250,0.9),rgba(78,201,255,0.8));border:none;color:#fff;font-size:16px;font-weight:900;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;font-family:'Outfit',sans-serif;margin-top:4px;letter-spacing:-0.3px;transition:all 0.22s;box-shadow:0 4px 28px rgba(167,139,250,0.28);}
+.submit-btn{width:100%;padding:16px 24px;border-radius:16px;background:linear-gradient(135deg,rgba(167,139,250,0.9),rgba(78,201,255,0.8));border:none;color:#fff;font-size:16px;font-weight:900;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;font-family:'Outfit',sans-serif;margin-top:4px;transition:all 0.22s;box-shadow:0 4px 28px rgba(167,139,250,0.28);}
 .submit-btn:hover{transform:translateY(-2px);box-shadow:0 10px 36px rgba(167,139,250,0.45)!important;}
 .submit-btn:hover .submit-arr{transform:translateX(5px);}
 .submit-btn:active{transform:translateY(0);}
