@@ -345,6 +345,32 @@ export default function ExpenseTracker({ user, onLogout }) {
           </div>
         </div>
       )}
+      <div style={{
+  textAlign:"center",
+  padding:"20px 0 8px",
+  position:"relative",
+  zIndex:1
+}}>
+  <div style={{
+    display:"inline-flex",
+    alignItems:"center",
+    gap:8,
+    background:"rgba(255,255,255,0.03)",
+    border:"1px solid rgba(255,255,255,0.07)",
+    borderRadius:99,
+    padding:"8px 18px"
+  }}>
+    <span style={{fontSize:12, color:"#333"}}>Developed by</span>
+    <span style={{
+      fontSize:13,
+      fontWeight:900,
+      background:"linear-gradient(135deg,#A78BFA,#4EC9FF)",
+      WebkitBackgroundClip:"text",
+      WebkitTextFillColor:"transparent",
+      letterSpacing:"-0.3px"
+    }}>✦ Sanmay Dodake</span>
+  </div>
+</div>
       <div style={{height:40}}/>
     </div>
   );
