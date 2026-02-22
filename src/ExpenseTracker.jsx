@@ -259,8 +259,53 @@ export default function ExpenseTracker({ user, onLogout }) {
               </div>
             )}
           </div>
-          <div className="glass-card">
-            <div className="card-title">Recent Transactions</div>
+          {/* ── TODAY'S EXPENSES ── */}
+<div className="glass-card">
+  <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18}}>
+    <div className="card-title" style={{margin:0}}>Today's Expenses</div>
+    <span style={{fontSize:11, color:"#555"}}>
+      {new Date().toLocaleDateString("en-IN",{weekday:"short",day:"numeric",month:"short"})}
+    </span>
+  </div>
+  {expenses.filter(e=>e.date===todayStr()).length === 0 ? (
+    <div style={{textAlign:"center", padding:"24px 0"}}>
+      <div style={{fontSize:36, marginBottom:8}}>☀️</div>
+      <p style={{margin:0, fontSize:13, color:"#555"}}>No expenses today</p>
+      <p style={{margin:"4px 0 0", fontSize:11, color:"#333"}}>Start tracking today's spending</p>
+    </div>
+  ) : (
+    <>
+      <div style={{display:"flex", flexDirection:"column", gap:10}}>
+        {expenses.filter(e=>e.date===todayStr()).map(exp=>(
+          <ExpenseRow key={exp.id} exp={exp} isNew={exp.id===newId} isDeleting={exp.id===deleteId} onDelete={handleDelete}/>
+        ))}
+      </div>
+      <div style={{
+        marginTop:14, padding:"10px 14px", borderRadius:12,
+        background:"rgba(167,139,250,0.08)", border:"1px solid rgba(167,139,250,0.15)",
+        display:"flex", justifyContent:"space-between", alignItems:"center"
+      }}>
+        <span style={{fontSize:12, color:"#888"}}>Today's Total</span>
+        <span style={{fontSize:15, fontWeight:900, color:"#A78BFA"}}>
+          {fmt(expenses.filter(e=>e.date===todayStr()).reduce((s,e)=>s+e.amount,0))}
+        </span>
+      </div>
+    </>
+  )}
+</div>
+
+{/* ── RECENT TRANSACTIONS ── */}
+<div className="glass-card">
+  <div className="card-title">Recent Transactions</div>
+  {expenses.length===0 ? <EmptyState/> : (
+    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      {expenses.slice(0,5).map(exp=>(
+        <ExpenseRow key={exp.id} exp={exp} isNew={exp.id===newId} isDeleting={exp.id===deleteId} onDelete={handleDelete}/>
+      ))}
+      {expenses.length>5 && <button className="view-all-btn" onClick={()=>setTab("history")}>View all {expenses.length} transactions →</button>}
+    </div>
+  )}
+</div>
             {expenses.length===0 ? <EmptyState/> : (
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
                 {expenses.slice(0,5).map(exp=>(
