@@ -103,62 +103,57 @@ function ExpenseRow({ exp, isNew, isDeleting, onDelete }) {
   );
 }
 
-function EmptyState() {
+function EmptyState({ text="No expenses here", sub="Start tracking your spending" }) {
   return (
-    <div style={{ textAlign:"center", padding:"40px 0" }}>
-      <div style={{fontSize:48, marginBottom:10}}>🧾</div>
-      <p style={{margin:0, fontSize:14, color:"#555"}}>No expenses here</p>
-      <p style={{margin:"4px 0 0", fontSize:12, color:"#333"}}>Start tracking your spending</p>
+    <div style={{ textAlign:"center", padding:"36px 0" }}>
+      <div style={{fontSize:44, marginBottom:10}}>🧾</div>
+      <p style={{margin:0, fontSize:14, color:"#555"}}>{text}</p>
+      <p style={{margin:"4px 0 0", fontSize:12, color:"#333"}}>{sub}</p>
     </div>
   );
 }
 
 export default function ExpenseTracker({ user, onLogout }) {
-  const [expenses, setExpenses]   = useState([]);
+  const [expenses, setExpenses]     = useState([]);
   const [dataLoaded, setDataLoaded] = useState(false);
-  const [dbReady, setDbReady]     = useState(false);
-  const [form, setForm]           = useState({ title:"", amount:"", category:CATEGORIES[0].name, date:todayStr(), note:"" });
-  const [errors, setErrors]       = useState({});
-  const [tab, setTab]             = useState("dashboard");
-  const [filterCat, setFilterCat] = useState("All");
-  const [newId, setNewId]         = useState(null);
-  const [deleteId, setDeleteId]   = useState(null);
-  const [showMenu, setShowMenu]   = useState(false);
+  const [dbReady, setDbReady]       = useState(false);
+  const [form, setForm]             = useState({ title:"", amount:"", category:CATEGORIES[0].name, date:todayStr(), note:"" });
+  const [errors, setErrors]         = useState({});
+  const [tab, setTab]               = useState("dashboard");
+  const [filterCat, setFilterCat]   = useState("All");
+  const [filterDate, setFilterDate] = useState("");
+  const [newId, setNewId]           = useState(null);
+  const [deleteId, setDeleteId]     = useState(null);
+  const [showMenu, setShowMenu]     = useState(false);
 
-  // ── Load from Firebase Realtime Database ──
+  // ── Load from Firebase ──
   useEffect(() => {
     if (!user?.uid) return;
     const expRef = ref(db, `users/${user.uid}/expenses`);
     const unsub = onValue(expRef, (snapshot) => {
       const data = snapshot.val();
-      if (data) {
-        const arr = Object.values(data).sort((a,b) => b.id - a.id);
-        setExpenses(arr);
-      } else {
-        setExpenses([]);
-      }
+      setExpenses(data ? Object.values(data).sort((a,b)=>b.id-a.id) : []);
       setDataLoaded(true);
       setDbReady(true);
     });
     return () => unsub();
   }, [user?.uid]);
 
-  // ── Save to Firebase Realtime Database ──
+  // ── Save to Firebase ──
   useEffect(() => {
     if (!user?.uid || !dataLoaded || !dbReady) return;
     const expRef = ref(db, `users/${user.uid}/expenses`);
-    if (expenses.length === 0) {
-      set(expRef, null);
-    } else {
-      const obj = {};
-      expenses.forEach(e => { obj[e.id] = e; });
-      set(expRef, obj);
-    }
+    if (expenses.length === 0) { set(expRef, null); return; }
+    const obj = {};
+    expenses.forEach(e => { obj[e.id] = e; });
+    set(expRef, obj);
   }, [expenses, user?.uid, dataLoaded, dbReady]);
 
   const total     = expenses.reduce((s,e)=>s+e.amount,0);
   const thisMonth = expenses.filter(e=>e.date?.slice(0,7)===todayStr().slice(0,7)).reduce((s,e)=>s+e.amount,0);
   const avgPerTxn = expenses.length ? total/expenses.length : 0;
+  const todayExp  = expenses.filter(e=>e.date===todayStr());
+  const todayTotal= todayExp.reduce((s,e)=>s+e.amount,0);
 
   const handleAdd = () => {
     const e = {};
@@ -177,14 +172,26 @@ export default function ExpenseTracker({ user, onLogout }) {
     setTimeout(()=>{ setExpenses(prev=>prev.filter(e=>e.id!==id)); setDeleteId(null); },380);
   };
 
-  const filtered = filterCat==="All" ? expenses : expenses.filter(e=>e.category===filterCat);
-  const catTotals = CATEGORIES.map(cat=>({...cat,total:expenses.filter(e=>e.category===cat.name).reduce((s,e)=>s+e.amount,0)})).filter(c=>c.total>0).sort((a,b)=>b.total-a.total);
+  // History filtering — by category AND date
+  const filtered = expenses
+    .filter(e => filterCat==="All" || e.category===filterCat)
+    .filter(e => !filterDate || e.date===filterDate);
+
+  const catTotals = CATEGORIES.map(cat=>({
+    ...cat, total:expenses.filter(e=>e.category===cat.name).reduce((s,e)=>s+e.amount,0)
+  })).filter(c=>c.total>0).sort((a,b)=>b.total-a.total);
+
   const initials = (user?.name||"U").split(" ").map(n=>n[0]).join("").toUpperCase().slice(0,2);
-  const TABS = [{id:"dashboard",label:"Overview",icon:"⬡"},{id:"add",label:"Add New",icon:"+"},{id:"history",label:"History",icon:"≡"}];
+  const TABS = [
+    {id:"dashboard", label:"Overview", icon:"⬡"},
+    {id:"add",       label:"Add New",  icon:"+"},
+    {id:"history",   label:"History",  icon:"≡"},
+  ];
 
   if (!dataLoaded) return (
     <div style={{ minHeight:"100vh", background:"#070710", display:"flex", alignItems:"center",
-      justifyContent:"center", color:"#555", fontFamily:"'Outfit',sans-serif", fontSize:14, flexDirection:"column", gap:12 }}>
+      justifyContent:"center", color:"#555", fontFamily:"'Outfit',sans-serif", fontSize:14,
+      flexDirection:"column", gap:12 }}>
       <div style={{ width:32, height:32, border:"2px solid rgba(167,139,250,0.3)",
         borderTopColor:"#A78BFA", borderRadius:"50%", animation:"spin 0.7s linear infinite" }}/>
       <style>{`@keyframes spin{to{transform:rotate(360deg);}}`}</style>
@@ -197,6 +204,7 @@ export default function ExpenseTracker({ user, onLogout }) {
       <style>{CSS}</style>
       <div className="blob blob-1"/><div className="blob blob-2"/><div className="blob blob-3"/>
 
+      {/* ── HEADER ── */}
       <header className="header">
         <div className="brand">
           <div className="brand-mark">💸</div>
@@ -218,6 +226,7 @@ export default function ExpenseTracker({ user, onLogout }) {
         </div>
       </header>
 
+      {/* ── HERO ── */}
       <div className="hero-card">
         <div className="hero-glow"/>
         <div className="hero-greeting">Hi, {user?.name?.split(" ")[0]||"there"} 👋</div>
@@ -232,6 +241,7 @@ export default function ExpenseTracker({ user, onLogout }) {
         </div>
       </div>
 
+      {/* ── TABS ── */}
       <div className="tabbar">
         {TABS.map(t=>(
           <button key={t.id} className={`tab ${tab===t.id?"tab-active":""}`} onClick={()=>setTab(t.id)}>
@@ -240,8 +250,11 @@ export default function ExpenseTracker({ user, onLogout }) {
         ))}
       </div>
 
+      {/* ══════ DASHBOARD ══════ */}
       {tab==="dashboard" && (
         <div className="fade-in">
+
+          {/* Spending Breakdown */}
           <div className="glass-card">
             <div className="card-title">Spending Breakdown</div>
             <DonutChart expenses={expenses}/>
@@ -259,79 +272,75 @@ export default function ExpenseTracker({ user, onLogout }) {
               </div>
             )}
           </div>
-          {/* ── TODAY'S EXPENSES ── */}
-<div className="glass-card">
-  <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18}}>
-    <div className="card-title" style={{margin:0}}>Today's Expenses</div>
-    <span style={{fontSize:11, color:"#555"}}>
-      {new Date().toLocaleDateString("en-IN",{weekday:"short",day:"numeric",month:"short"})}
-    </span>
-  </div>
-  {expenses.filter(e=>e.date===todayStr()).length === 0 ? (
-    <div style={{textAlign:"center", padding:"24px 0"}}>
-      <div style={{fontSize:36, marginBottom:8}}>☀️</div>
-      <p style={{margin:0, fontSize:13, color:"#555"}}>No expenses today</p>
-      <p style={{margin:"4px 0 0", fontSize:11, color:"#333"}}>Start tracking today's spending</p>
-    </div>
-  ) : (
-    <>
-      <div style={{display:"flex", flexDirection:"column", gap:10}}>
-        {expenses.filter(e=>e.date===todayStr()).map(exp=>(
-          <ExpenseRow key={exp.id} exp={exp} isNew={exp.id===newId} isDeleting={exp.id===deleteId} onDelete={handleDelete}/>
-        ))}
-      </div>
-      <div style={{
-        marginTop:14, padding:"10px 14px", borderRadius:12,
-        background:"rgba(167,139,250,0.08)", border:"1px solid rgba(167,139,250,0.15)",
-        display:"flex", justifyContent:"space-between", alignItems:"center"
-      }}>
-        <span style={{fontSize:12, color:"#888"}}>Today's Total</span>
-        <span style={{fontSize:15, fontWeight:900, color:"#A78BFA"}}>
-          {fmt(expenses.filter(e=>e.date===todayStr()).reduce((s,e)=>s+e.amount,0))}
-        </span>
-      </div>
-    </>
-  )}
-</div>
 
-{/* ── RECENT TRANSACTIONS ── */}
-<div className="glass-card">
-  <div className="card-title">Recent Transactions</div>
-  {expenses.length===0 ? <EmptyState/> : (
-    <div style={{display:"flex",flexDirection:"column",gap:10}}>
-      {expenses.slice(0,5).map(exp=>(
-        <ExpenseRow key={exp.id} exp={exp} isNew={exp.id===newId} isDeleting={exp.id===deleteId} onDelete={handleDelete}/>
-      ))}
-      {expenses.length>5 && <button className="view-all-btn" onClick={()=>setTab("history")}>View all {expenses.length} transactions →</button>}
-    </div>
-  )}
-</div>
+          {/* Today's Expenses */}
+          <div className="glass-card">
+            <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18}}>
+              <div className="card-title" style={{margin:0}}>Today's Expenses</div>
+              <span style={{fontSize:11, color:"#555", fontWeight:600}}>
+                {new Date().toLocaleDateString("en-IN",{weekday:"short",day:"numeric",month:"short"})}
+              </span>
+            </div>
+            {todayExp.length === 0 ? (
+              <div style={{textAlign:"center", padding:"20px 0"}}>
+                <div style={{fontSize:32, marginBottom:8}}>☀️</div>
+                <p style={{margin:0, fontSize:13, color:"#555"}}>No expenses today</p>
+                <p style={{margin:"4px 0 0", fontSize:11, color:"#333"}}>Add your first expense of the day!</p>
+              </div>
+            ) : (
+              <>
+                <div style={{display:"flex", flexDirection:"column", gap:10}}>
+                  {todayExp.map(exp=>(
+                    <ExpenseRow key={exp.id} exp={exp} isNew={exp.id===newId} isDeleting={exp.id===deleteId} onDelete={handleDelete}/>
+                  ))}
+                </div>
+                <div style={{
+                  marginTop:14, padding:"10px 14px", borderRadius:12,
+                  background:"rgba(167,139,250,0.08)", border:"1px solid rgba(167,139,250,0.15)",
+                  display:"flex", justifyContent:"space-between", alignItems:"center"
+                }}>
+                  <span style={{fontSize:12, color:"#888"}}>Today's Total</span>
+                  <span style={{fontSize:15, fontWeight:900, color:"#A78BFA"}}>{fmt(todayTotal)}</span>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Recent Transactions */}
+          <div className="glass-card">
+            <div className="card-title">Recent Transactions</div>
             {expenses.length===0 ? <EmptyState/> : (
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
                 {expenses.slice(0,5).map(exp=>(
                   <ExpenseRow key={exp.id} exp={exp} isNew={exp.id===newId} isDeleting={exp.id===deleteId} onDelete={handleDelete}/>
                 ))}
-                {expenses.length>5 && <button className="view-all-btn" onClick={()=>setTab("history")}>View all {expenses.length} transactions →</button>}
+                {expenses.length>5 && (
+                  <button className="view-all-btn" onClick={()=>setTab("history")}>
+                    View all {expenses.length} transactions →
+                  </button>
+                )}
               </div>
             )}
           </div>
+
         </div>
       )}
 
+      {/* ══════ ADD ══════ */}
       {tab==="add" && (
         <div className="fade-in glass-card">
           <div className="card-title">New Expense</div>
           <div className="form-group">
             <label className="form-label">Title</label>
             <input className={`xp-input ${errors.title?"xp-input-err":""}`} placeholder="e.g. Dinner with friends"
-              value={form.title} onChange={e=>{setForm({...form,title:e.target.value});setErrors({...errors,title:""});}}/>
+              value={form.title} onChange={e=>{setForm({...form,title:e.target.value});setErrors({...errors,title:""}); }}/>
             {errors.title && <span className="err-msg">{errors.title}</span>}
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
             <div className="form-group">
               <label className="form-label">Amount (₹)</label>
               <input className={`xp-input ${errors.amount?"xp-input-err":""}`} placeholder="0.00" type="number" min="0"
-                value={form.amount} onChange={e=>{setForm({...form,amount:e.target.value});setErrors({...errors,amount:""});}}/>
+                value={form.amount} onChange={e=>{setForm({...form,amount:e.target.value});setErrors({...errors,amount:""}); }}/>
               {errors.amount && <span className="err-msg">{errors.amount}</span>}
             </div>
             <div className="form-group">
@@ -357,12 +366,40 @@ export default function ExpenseTracker({ user, onLogout }) {
             <textarea className="xp-input" style={{height:76,resize:"none",paddingTop:13}} placeholder="Any details..."
               value={form.note} onChange={e=>setForm({...form,note:e.target.value})}/>
           </div>
-          <button className="submit-btn" onClick={handleAdd}><span>Add Expense</span><span className="submit-arr">→</span></button>
+          <button className="submit-btn" onClick={handleAdd}>
+            <span>Add Expense</span><span className="submit-arr">→</span>
+          </button>
         </div>
       )}
 
+      {/* ══════ HISTORY ══════ */}
       {tab==="history" && (
         <div className="fade-in">
+
+          {/* Date picker */}
+          <div className="glass-card" style={{padding:"16px 18px", marginBottom:12}}>
+            <div style={{display:"flex", alignItems:"center", gap:12}}>
+              <span style={{fontSize:11, fontWeight:800, color:"#555", letterSpacing:1, textTransform:"uppercase", whiteSpace:"nowrap"}}>📅 Pick Date</span>
+              <input className="xp-input" type="date" value={filterDate}
+                style={{flex:1, padding:"9px 14px", fontSize:13}}
+                onChange={e=>setFilterDate(e.target.value)}/>
+              {filterDate && (
+                <button onClick={()=>setFilterDate("")} style={{
+                  background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)",
+                  borderRadius:10, color:"#888", fontSize:12, padding:"8px 12px",
+                  cursor:"pointer", fontFamily:"'Outfit',sans-serif", whiteSpace:"nowrap"
+                }}>Clear</button>
+              )}
+            </div>
+            {filterDate && (
+              <div style={{marginTop:10, fontSize:12, color:"#A78BFA", fontWeight:700}}>
+                Showing: {new Date(filterDate+"T00:00:00").toLocaleDateString("en-IN",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}
+                {" · "}{fmt(filtered.reduce((s,e)=>s+e.amount,0))}
+              </div>
+            )}
+          </div>
+
+          {/* Category filter chips */}
           <div className="filter-scroll">
             {["All",...CATEGORIES.map(c=>c.name)].map(cat=>{
               const co=cat!=="All"?getCat(cat):null;
@@ -375,12 +412,21 @@ export default function ExpenseTracker({ user, onLogout }) {
               );
             })}
           </div>
+
           <div className="glass-card">
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-              <div className="card-title" style={{margin:0}}>{filterCat==="All"?"All Transactions":filterCat}</div>
+              <div className="card-title" style={{margin:0}}>
+                {filterDate ? new Date(filterDate+"T00:00:00").toLocaleDateString("en-IN",{day:"numeric",month:"short"}) :
+                 filterCat==="All" ? "All Transactions" : filterCat}
+              </div>
               <span style={{fontSize:12,color:"#555"}}>{filtered.length} items · {fmt(filtered.reduce((s,e)=>s+e.amount,0))}</span>
             </div>
-            {filtered.length===0?<EmptyState/>:(
+            {filtered.length===0 ? (
+              <EmptyState
+                text={filterDate?"No expenses on this date":"No expenses here"}
+                sub={filterDate?"Try a different date":"Add your first expense!"}
+              />
+            ) : (
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
                 {filtered.map(exp=>(
                   <ExpenseRow key={exp.id} exp={exp} isNew={exp.id===newId} isDeleting={exp.id===deleteId} onDelete={handleDelete}/>
@@ -390,32 +436,23 @@ export default function ExpenseTracker({ user, onLogout }) {
           </div>
         </div>
       )}
-      <div style={{
-  textAlign:"center",
-  padding:"20px 0 8px",
-  position:"relative",
-  zIndex:1
-}}>
-  <div style={{
-    display:"inline-flex",
-    alignItems:"center",
-    gap:8,
-    background:"rgba(255,255,255,0.03)",
-    border:"1px solid rgba(255,255,255,0.07)",
-    borderRadius:99,
-    padding:"8px 18px"
-  }}>
-    <span style={{fontSize:12, color:"#333"}}>Developed by</span>
-    <span style={{
-      fontSize:13,
-      fontWeight:900,
-      background:"linear-gradient(135deg,#A78BFA,#4EC9FF)",
-      WebkitBackgroundClip:"text",
-      WebkitTextFillColor:"transparent",
-      letterSpacing:"-0.3px"
-    }}>✦ Sanmay Dodake</span>
-  </div>
-</div>
+
+      {/* ── SIGNATURE ── */}
+      <div style={{textAlign:"center", padding:"20px 0 8px", position:"relative", zIndex:1}}>
+        <div style={{
+          display:"inline-flex", alignItems:"center", gap:8,
+          background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)",
+          borderRadius:99, padding:"8px 18px"
+        }}>
+          <span style={{fontSize:12, color:"#333"}}>Developed by</span>
+          <span style={{
+            fontSize:13, fontWeight:900,
+            background:"linear-gradient(135deg,#A78BFA,#4EC9FF)",
+            WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent", letterSpacing:"-0.3px"
+          }}>✦ Sanmay Dodake</span>
+        </div>
+      </div>
+
       <div style={{height:40}}/>
     </div>
   );
@@ -501,5 +538,6 @@ textarea.xp-input{height:76px;resize:none;padding-top:13px;}
 .view-all-btn:hover{color:#999!important;border-color:rgba(255,255,255,0.18)!important;}
 @keyframes slideIn{from{opacity:0;transform:translateY(-14px) scale(0.97);}to{opacity:1;transform:translateY(0) scale(1);}}
 @keyframes fadeIn{from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:translateY(0);}}
+@keyframes spin{to{transform:rotate(360deg);}}
 .fade-in{animation:fadeIn 0.4s cubic-bezier(.22,1,.36,1);}
 `;
