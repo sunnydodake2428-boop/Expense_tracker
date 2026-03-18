@@ -13,14 +13,104 @@ const CATEGORIES = [
   { name: "Other",             icon: "📦", color: "#C9C9C9", bg: "rgba(201,201,201,0.12)" },
 ];
 
+// ── UPDATE CONFIG — change version string to trigger popup again ──
+const APP_VERSION = "v2.0";
+const UPDATE_NOTES = [
+  { icon: "📅", text: "Month-wise expense tracking — switch between months easily" },
+  { icon: "☀️", text: "Today's expenses section on dashboard" },
+  { icon: "🔍", text: "Date picker in History — search any day's transactions" },
+  { icon: "📊", text: "Month-to-month comparison with trend indicators" },
+  { icon: "🔐", text: "Real Google login + cloud sync across all devices" },
+];
+
 const getCat   = (name) => CATEGORIES.find((c) => c.name === name) || CATEGORIES[7];
 const fmt      = (n) => new Intl.NumberFormat("en-IN", { style:"currency", currency:"INR", maximumFractionDigits:2 }).format(n);
 const todayStr = () => new Date().toISOString().split("T")[0];
-const monthKey = (d) => d.toISOString().slice(0, 7); // "YYYY-MM"
+const monthKey = (d) => d.toISOString().slice(0, 7);
 const monthLabel = (ym) => {
   const [y, m] = ym.split("-");
   return new Date(+y, +m - 1).toLocaleDateString("en-IN", { month:"short", year:"numeric" });
 };
+
+/* ── Update Popup ── */
+function UpdatePopup({ onClose }) {
+  return (
+    <div style={{
+      position:"fixed", inset:0, zIndex:9999,
+      background:"rgba(0,0,0,0.75)", backdropFilter:"blur(8px)",
+      display:"flex", alignItems:"center", justifyContent:"center", padding:20
+    }}>
+      <div style={{
+        width:"100%", maxWidth:380,
+        background:"linear-gradient(145deg,#0e0e1f,#111128)",
+        border:"1px solid rgba(167,139,250,0.3)",
+        borderRadius:28, padding:"32px 28px 28px",
+        boxShadow:"0 24px 80px rgba(0,0,0,0.6), 0 0 60px rgba(167,139,250,0.1)",
+        animation:"popIn 0.4s cubic-bezier(.22,1,.36,1)"
+      }}>
+        {/* Header */}
+        <div style={{textAlign:"center", marginBottom:24}}>
+          <div style={{
+            width:56, height:56, borderRadius:18, fontSize:26, margin:"0 auto 14px",
+            background:"linear-gradient(135deg,rgba(167,139,250,0.3),rgba(78,201,255,0.2))",
+            border:"1px solid rgba(167,139,250,0.3)",
+            display:"flex", alignItems:"center", justifyContent:"center",
+            boxShadow:"0 8px 24px rgba(167,139,250,0.25)"
+          }}>🚀</div>
+          <div style={{
+            display:"inline-flex", alignItems:"center", gap:6, marginBottom:8,
+            background:"rgba(167,139,250,0.12)", border:"1px solid rgba(167,139,250,0.25)",
+            borderRadius:99, padding:"3px 12px"
+          }}>
+            <span style={{fontSize:10, color:"#A78BFA", fontWeight:800, letterSpacing:1, textTransform:"uppercase"}}>New Update</span>
+            <span style={{fontSize:10, color:"#666", fontWeight:700}}>{APP_VERSION}</span>
+          </div>
+          <div style={{fontSize:20, fontWeight:900, color:"#fff", letterSpacing:"-0.5px"}}>
+            What's New in Expensify
+          </div>
+          <div style={{fontSize:12, color:"#555", marginTop:4}}>
+            Here's what we improved for you
+          </div>
+        </div>
+
+        {/* Update notes */}
+        <div style={{display:"flex", flexDirection:"column", gap:10, marginBottom:24}}>
+          {UPDATE_NOTES.map((note, i) => (
+            <div key={i} style={{
+              display:"flex", alignItems:"center", gap:12,
+              background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.06)",
+              borderRadius:14, padding:"11px 14px",
+              animation:`fadeSlide 0.4s cubic-bezier(.22,1,.36,1) ${i*0.07}s both`
+            }}>
+              <span style={{fontSize:20, flexShrink:0}}>{note.icon}</span>
+              <span style={{fontSize:13, color:"#bbb", lineHeight:1.4}}>{note.text}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* CTA */}
+        <button onClick={onClose} style={{
+          width:"100%", padding:"14px", borderRadius:14,
+          background:"linear-gradient(135deg,rgba(167,139,250,0.9),rgba(78,201,255,0.8))",
+          border:"none", color:"#fff", fontSize:15, fontWeight:900,
+          cursor:"pointer", fontFamily:"'Outfit',sans-serif",
+          boxShadow:"0 4px 24px rgba(167,139,250,0.35)",
+          transition:"all 0.2s"
+        }}>
+          Got it, let's go! 🎉
+        </button>
+
+        <div style={{textAlign:"center", marginTop:12, fontSize:11, color:"#333"}}>
+          Built with ❤️ by Sanmay Dodake
+        </div>
+      </div>
+      <style>{`
+        @keyframes popIn{from{opacity:0;transform:scale(0.88) translateY(20px);}to{opacity:1;transform:scale(1) translateY(0);}}
+        @keyframes fadeSlide{from{opacity:0;transform:translateX(-10px);}to{opacity:1;transform:translateX(0);}}
+      `}</style>
+    </div>
+  );
+}
 
 function AnimatedNumber({ value }) {
   const [display, setDisplay] = useState(value);
@@ -122,6 +212,7 @@ export default function ExpenseTracker({ user, onLogout }) {
   const [expenses, setExpenses]     = useState([]);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [dbReady, setDbReady]       = useState(false);
+  const [showUpdate, setShowUpdate] = useState(false);
   const [form, setForm]             = useState({ title:"", amount:"", category:CATEGORIES[0].name, date:todayStr(), note:"" });
   const [errors, setErrors]         = useState({});
   const [tab, setTab]               = useState("dashboard");
@@ -131,6 +222,23 @@ export default function ExpenseTracker({ user, onLogout }) {
   const [deleteId, setDeleteId]     = useState(null);
   const [showMenu, setShowMenu]     = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(monthKey(new Date()));
+
+  // ── Check if user has seen this version's update popup ──
+  useEffect(() => {
+    if (!user?.uid) return;
+    const seenKey = `xp_seen_${APP_VERSION}_${user.uid}`;
+    const seen = localStorage.getItem(seenKey);
+    if (!seen) {
+      // Small delay so data loads first
+      setTimeout(() => setShowUpdate(true), 800);
+    }
+  }, [user?.uid]);
+
+  const handleCloseUpdate = () => {
+    const seenKey = `xp_seen_${APP_VERSION}_${user.uid}`;
+    localStorage.setItem(seenKey, "1");
+    setShowUpdate(false);
+  };
 
   // ── Load from Firebase ──
   useEffect(() => {
@@ -155,26 +263,22 @@ export default function ExpenseTracker({ user, onLogout }) {
     set(expRef, obj);
   }, [expenses, user?.uid, dataLoaded, dbReady]);
 
-  // ── Month calculations ──
   const allTime    = expenses.reduce((s,e)=>s+e.amount, 0);
   const todayExp   = expenses.filter(e=>e.date===todayStr());
   const todayTotal = todayExp.reduce((s,e)=>s+e.amount, 0);
 
-  // Get all months that have expenses + current month
   const monthsWithData = [...new Set([
     monthKey(new Date()),
     ...expenses.map(e=>e.date?.slice(0,7)).filter(Boolean)
-  ])].sort((a,b)=>b.localeCompare(a)); // newest first
+  ])].sort((a,b)=>b.localeCompare(a));
 
   const selectedMonthExp   = expenses.filter(e=>e.date?.slice(0,7)===selectedMonth);
   const selectedMonthTotal = selectedMonthExp.reduce((s,e)=>s+e.amount,0);
   const selectedMonthCount = selectedMonthExp.length;
 
-  // Previous month for comparison
   const prevMonthKey = () => {
     const [y,m] = selectedMonth.split("-").map(Number);
-    const d = new Date(y, m-2);
-    return monthKey(d);
+    return monthKey(new Date(y, m-2));
   };
   const prevMonthTotal = expenses.filter(e=>e.date?.slice(0,7)===prevMonthKey()).reduce((s,e)=>s+e.amount,0);
   const monthDiff = selectedMonthTotal - prevMonthTotal;
@@ -228,6 +332,9 @@ export default function ExpenseTracker({ user, onLogout }) {
       <style>{CSS}</style>
       <div className="blob blob-1"/><div className="blob blob-2"/><div className="blob blob-3"/>
 
+      {/* ── UPDATE POPUP ── */}
+      {showUpdate && <UpdatePopup onClose={handleCloseUpdate}/>}
+
       {/* ── HEADER ── */}
       <header className="header">
         <div className="brand">
@@ -237,20 +344,29 @@ export default function ExpenseTracker({ user, onLogout }) {
             <div className="brand-sub">Smart Tracker</div>
           </div>
         </div>
-        <div style={{position:"relative"}}>
-          <button className="user-avatar" onClick={()=>setShowMenu(s=>!s)}>{initials}</button>
-          {showMenu && (
-            <div className="user-menu fade-in">
-              <div className="user-menu-name">{user?.name}</div>
-              <div className="user-menu-email">{user?.email}</div>
-              <div className="user-menu-divider"/>
-              <button className="user-menu-logout" onClick={onLogout}>🚪 Sign Out</button>
-            </div>
-          )}
+        <div style={{display:"flex", alignItems:"center", gap:10}}>
+          {/* Update bell */}
+          <button onClick={()=>setShowUpdate(true)} title="What's new" style={{
+            width:36, height:36, borderRadius:50, background:"rgba(167,139,250,0.1)",
+            border:"1px solid rgba(167,139,250,0.2)", color:"#A78BFA",
+            display:"flex", alignItems:"center", justifyContent:"center",
+            cursor:"pointer", fontSize:16, transition:"all 0.2s"
+          }}>🔔</button>
+          <div style={{position:"relative"}}>
+            <button className="user-avatar" onClick={()=>setShowMenu(s=>!s)}>{initials}</button>
+            {showMenu && (
+              <div className="user-menu fade-in">
+                <div className="user-menu-name">{user?.name}</div>
+                <div className="user-menu-email">{user?.email}</div>
+                <div className="user-menu-divider"/>
+                <button className="user-menu-logout" onClick={onLogout}>🚪 Sign Out</button>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
-      {/* ── HERO — shows selected month ── */}
+      {/* ── HERO ── */}
       <div className="hero-card">
         <div className="hero-glow"/>
         <div className="hero-greeting">Hi, {user?.name?.split(" ")[0]||"there"} 👋</div>
@@ -258,21 +374,18 @@ export default function ExpenseTracker({ user, onLogout }) {
           {isCurrentMonth ? "This Month's Expenses" : `${monthLabel(selectedMonth)} Expenses`}
         </div>
         <div className="hero-amount"><AnimatedNumber value={selectedMonthTotal}/></div>
-
-        {/* Month comparison badge */}
         {prevMonthTotal > 0 && (
           <div style={{marginBottom:16}}>
             <span style={{
               fontSize:11, fontWeight:700, padding:"3px 10px", borderRadius:99,
-              background: monthDiff > 0 ? "rgba(255,107,107,0.15)" : "rgba(6,214,160,0.15)",
-              color: monthDiff > 0 ? "#FF6B6B" : "#06D6A0",
-              border: `1px solid ${monthDiff > 0 ? "rgba(255,107,107,0.3)" : "rgba(6,214,160,0.3)"}`
+              background: monthDiff>0?"rgba(255,107,107,0.15)":"rgba(6,214,160,0.15)",
+              color: monthDiff>0?"#FF6B6B":"#06D6A0",
+              border:`1px solid ${monthDiff>0?"rgba(255,107,107,0.3)":"rgba(6,214,160,0.3)"}`
             }}>
-              {monthDiff > 0 ? "▲" : "▼"} {fmt(Math.abs(monthDiff))} vs last month
+              {monthDiff>0?"▲":"▼"} {fmt(Math.abs(monthDiff))} vs last month
             </span>
           </div>
         )}
-
         <div className="hero-stats">
           <div className="hero-stat">
             <span className="hstat-label">Transactions</span>
@@ -281,7 +394,7 @@ export default function ExpenseTracker({ user, onLogout }) {
           <div className="hero-divider"/>
           <div className="hero-stat">
             <span className="hstat-label">Daily Avg</span>
-            <span className="hstat-val">{fmt(selectedMonthCount ? selectedMonthTotal / new Date(selectedMonth.split("-")[0], selectedMonth.split("-")[1], 0).getDate() : 0)}</span>
+            <span className="hstat-val">{fmt(selectedMonthCount?selectedMonthTotal/new Date(selectedMonth.split("-")[0],selectedMonth.split("-")[1],0).getDate():0)}</span>
           </div>
           <div className="hero-divider"/>
           <div className="hero-stat">
@@ -293,15 +406,13 @@ export default function ExpenseTracker({ user, onLogout }) {
 
       {/* ── MONTH TABS ── */}
       <div className="month-scroll">
-        {monthsWithData.map(ym => {
-          const mTotal = expenses.filter(e=>e.date?.slice(0,7)===ym).reduce((s,e)=>s+e.amount,0);
-          const isActive = ym === selectedMonth;
-          const isCurrent = ym === monthKey(new Date());
+        {monthsWithData.map(ym=>{
+          const mTotal=expenses.filter(e=>e.date?.slice(0,7)===ym).reduce((s,e)=>s+e.amount,0);
+          const isActive=ym===selectedMonth, isCurrent=ym===monthKey(new Date());
           return (
-            <button key={ym} className={`month-chip ${isActive?"month-chip-active":""}`}
-              onClick={()=>setSelectedMonth(ym)}>
-              <span className="month-chip-label">{isCurrent ? "This Month" : monthLabel(ym)}</span>
-              <span className="month-chip-amt" style={{color: isActive?"#A78BFA":"#555"}}>{fmt(mTotal)}</span>
+            <button key={ym} className={`month-chip ${isActive?"month-chip-active":""}`} onClick={()=>setSelectedMonth(ym)}>
+              <span className="month-chip-label">{isCurrent?"This Month":monthLabel(ym)}</span>
+              <span className="month-chip-amt" style={{color:isActive?"#A78BFA":"#555"}}>{fmt(mTotal)}</span>
             </button>
           );
         })}
@@ -319,8 +430,6 @@ export default function ExpenseTracker({ user, onLogout }) {
       {/* ══════ DASHBOARD ══════ */}
       {tab==="dashboard" && (
         <div className="fade-in">
-
-          {/* Spending Breakdown — filtered to selected month */}
           <div className="glass-card">
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
               <div className="card-title" style={{margin:0}}>Spending Breakdown</div>
@@ -343,54 +452,48 @@ export default function ExpenseTracker({ user, onLogout }) {
             {catTotals.length===0 && <EmptyState text="No spending this month" sub="Add expenses to see breakdown"/>}
           </div>
 
-          {/* Today's Expenses — only on current month view */}
           {isCurrentMonth && (
             <div className="glass-card">
-              <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
                 <div className="card-title" style={{margin:0}}>Today's Expenses</div>
-                <span style={{fontSize:11, color:"#555", fontWeight:600}}>
+                <span style={{fontSize:11,color:"#555",fontWeight:600}}>
                   {new Date().toLocaleDateString("en-IN",{weekday:"short",day:"numeric",month:"short"})}
                 </span>
               </div>
-              {todayExp.length === 0 ? (
-                <div style={{textAlign:"center", padding:"20px 0"}}>
-                  <div style={{fontSize:32, marginBottom:8}}>☀️</div>
-                  <p style={{margin:0, fontSize:13, color:"#555"}}>No expenses today</p>
-                  <p style={{margin:"4px 0 0", fontSize:11, color:"#333"}}>Add your first expense of the day!</p>
+              {todayExp.length===0?(
+                <div style={{textAlign:"center",padding:"20px 0"}}>
+                  <div style={{fontSize:32,marginBottom:8}}>☀️</div>
+                  <p style={{margin:0,fontSize:13,color:"#555"}}>No expenses today</p>
+                  <p style={{margin:"4px 0 0",fontSize:11,color:"#333"}}>Add your first expense of the day!</p>
                 </div>
-              ) : (
+              ):(
                 <>
-                  <div style={{display:"flex", flexDirection:"column", gap:10}}>
+                  <div style={{display:"flex",flexDirection:"column",gap:10}}>
                     {todayExp.map(exp=>(
                       <ExpenseRow key={exp.id} exp={exp} isNew={exp.id===newId} isDeleting={exp.id===deleteId} onDelete={handleDelete}/>
                     ))}
                   </div>
-                  <div style={{
-                    marginTop:14, padding:"10px 14px", borderRadius:12,
-                    background:"rgba(167,139,250,0.08)", border:"1px solid rgba(167,139,250,0.15)",
-                    display:"flex", justifyContent:"space-between", alignItems:"center"
-                  }}>
-                    <span style={{fontSize:12, color:"#888"}}>Today's Total</span>
-                    <span style={{fontSize:15, fontWeight:900, color:"#A78BFA"}}>{fmt(todayTotal)}</span>
+                  <div style={{marginTop:14,padding:"10px 14px",borderRadius:12,background:"rgba(167,139,250,0.08)",border:"1px solid rgba(167,139,250,0.15)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <span style={{fontSize:12,color:"#888"}}>Today's Total</span>
+                    <span style={{fontSize:15,fontWeight:900,color:"#A78BFA"}}>{fmt(todayTotal)}</span>
                   </div>
                 </>
               )}
             </div>
           )}
 
-          {/* Recent Transactions for selected month */}
           <div className="glass-card">
             <div className="card-title">
-              {isCurrentMonth ? "Recent Transactions" : `${monthLabel(selectedMonth)} Transactions`}
+              {isCurrentMonth?"Recent Transactions":`${monthLabel(selectedMonth)} Transactions`}
             </div>
-            {selectedMonthExp.length===0 ? (
+            {selectedMonthExp.length===0?(
               <EmptyState text="No transactions this month" sub="Switch month or add new expenses"/>
-            ) : (
+            ):(
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
                 {selectedMonthExp.slice(0,5).map(exp=>(
                   <ExpenseRow key={exp.id} exp={exp} isNew={exp.id===newId} isDeleting={exp.id===deleteId} onDelete={handleDelete}/>
                 ))}
-                {selectedMonthExp.length>5 && (
+                {selectedMonthExp.length>5&&(
                   <button className="view-all-btn" onClick={()=>setTab("history")}>
                     View all {selectedMonthExp.length} transactions →
                   </button>
@@ -399,39 +502,32 @@ export default function ExpenseTracker({ user, onLogout }) {
             )}
           </div>
 
-          {/* Month-to-month summary card */}
-          {monthsWithData.length > 1 && (
+          {monthsWithData.length>1&&(
             <div className="glass-card">
               <div className="card-title">Month to Month</div>
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
                 {monthsWithData.slice(0,6).map(ym=>{
-                  const mTotal = expenses.filter(e=>e.date?.slice(0,7)===ym).reduce((s,e)=>s+e.amount,0);
-                  const mCount = expenses.filter(e=>e.date?.slice(0,7)===ym).length;
-                  const maxTotal = Math.max(...monthsWithData.map(m=>expenses.filter(e=>e.date?.slice(0,7)===m).reduce((s,e)=>s+e.amount,0)));
-                  const isCur = ym===monthKey(new Date());
-                  const isSel = ym===selectedMonth;
+                  const mTotal=expenses.filter(e=>e.date?.slice(0,7)===ym).reduce((s,e)=>s+e.amount,0);
+                  const mCount=expenses.filter(e=>e.date?.slice(0,7)===ym).length;
+                  const maxTotal=Math.max(...monthsWithData.map(m=>expenses.filter(e=>e.date?.slice(0,7)===m).reduce((s,e)=>s+e.amount,0)));
+                  const isCur=ym===monthKey(new Date()), isSel=ym===selectedMonth;
                   return (
                     <button key={ym} onClick={()=>setSelectedMonth(ym)} style={{
-                      background: isSel?"rgba(167,139,250,0.08)":"transparent",
-                      border: isSel?"1px solid rgba(167,139,250,0.2)":"1px solid transparent",
-                      borderRadius:14, padding:"10px 12px", cursor:"pointer", textAlign:"left"
+                      background:isSel?"rgba(167,139,250,0.08)":"transparent",
+                      border:isSel?"1px solid rgba(167,139,250,0.2)":"1px solid transparent",
+                      borderRadius:14,padding:"10px 12px",cursor:"pointer",textAlign:"left"
                     }}>
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-                        <span style={{fontSize:13,color: isSel?"#A78BFA":"#bbb",fontWeight:700}}>
+                        <span style={{fontSize:13,color:isSel?"#A78BFA":"#bbb",fontWeight:700}}>
                           {isCur?"This Month":monthLabel(ym)}
                         </span>
                         <div style={{textAlign:"right"}}>
-                          <span style={{fontSize:14,fontWeight:900,color: isSel?"#A78BFA":"#ccc"}}>{fmt(mTotal)}</span>
+                          <span style={{fontSize:14,fontWeight:900,color:isSel?"#A78BFA":"#ccc"}}>{fmt(mTotal)}</span>
                           <span style={{fontSize:10,color:"#444",marginLeft:8}}>{mCount} txns</span>
                         </div>
                       </div>
                       <div style={{height:4,borderRadius:99,background:"rgba(255,255,255,0.05)",overflow:"hidden"}}>
-                        <div style={{
-                          height:"100%", borderRadius:99,
-                          width:`${maxTotal>0?(mTotal/maxTotal)*100:0}%`,
-                          background: isSel?"linear-gradient(90deg,#A78BFA,#4EC9FF)":"rgba(255,255,255,0.1)",
-                          transition:"width 0.8s cubic-bezier(.22,1,.36,1)"
-                        }}/>
+                        <div style={{height:"100%",borderRadius:99,width:`${maxTotal>0?(mTotal/maxTotal)*100:0}%`,background:isSel?"linear-gradient(90deg,#A78BFA,#4EC9FF)":"rgba(255,255,255,0.1)",transition:"width 0.8s cubic-bezier(.22,1,.36,1)"}}/>
                       </div>
                     </button>
                   );
@@ -439,7 +535,6 @@ export default function ExpenseTracker({ user, onLogout }) {
               </div>
             </div>
           )}
-
         </div>
       )}
 
@@ -451,14 +546,14 @@ export default function ExpenseTracker({ user, onLogout }) {
             <label className="form-label">Title</label>
             <input className={`xp-input ${errors.title?"xp-input-err":""}`} placeholder="e.g. Dinner with friends"
               value={form.title} onChange={e=>{setForm({...form,title:e.target.value});setErrors({...errors,title:""});}}/>
-            {errors.title && <span className="err-msg">{errors.title}</span>}
+            {errors.title&&<span className="err-msg">{errors.title}</span>}
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
             <div className="form-group">
               <label className="form-label">Amount (₹)</label>
               <input className={`xp-input ${errors.amount?"xp-input-err":""}`} placeholder="0.00" type="number" min="0"
                 value={form.amount} onChange={e=>{setForm({...form,amount:e.target.value});setErrors({...errors,amount:""});}}/>
-              {errors.amount && <span className="err-msg">{errors.amount}</span>}
+              {errors.amount&&<span className="err-msg">{errors.amount}</span>}
             </div>
             <div className="form-group">
               <label className="form-label">Date</label>
@@ -492,28 +587,23 @@ export default function ExpenseTracker({ user, onLogout }) {
       {/* ══════ HISTORY ══════ */}
       {tab==="history" && (
         <div className="fade-in">
-          <div className="glass-card" style={{padding:"16px 18px", marginBottom:12}}>
-            <div style={{display:"flex", alignItems:"center", gap:12}}>
-              <span style={{fontSize:11, fontWeight:800, color:"#555", letterSpacing:1, textTransform:"uppercase", whiteSpace:"nowrap"}}>📅 Date</span>
+          <div className="glass-card" style={{padding:"16px 18px",marginBottom:12}}>
+            <div style={{display:"flex",alignItems:"center",gap:12}}>
+              <span style={{fontSize:11,fontWeight:800,color:"#555",letterSpacing:1,textTransform:"uppercase",whiteSpace:"nowrap"}}>📅 Date</span>
               <input className="xp-input" type="date" value={filterDate}
-                style={{flex:1, padding:"9px 14px", fontSize:13}}
+                style={{flex:1,padding:"9px 14px",fontSize:13}}
                 onChange={e=>setFilterDate(e.target.value)}/>
-              {filterDate && (
-                <button onClick={()=>setFilterDate("")} style={{
-                  background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)",
-                  borderRadius:10, color:"#888", fontSize:12, padding:"8px 12px",
-                  cursor:"pointer", fontFamily:"'Outfit',sans-serif", whiteSpace:"nowrap"
-                }}>Clear</button>
+              {filterDate&&(
+                <button onClick={()=>setFilterDate("")} style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,color:"#888",fontSize:12,padding:"8px 12px",cursor:"pointer",fontFamily:"'Outfit',sans-serif",whiteSpace:"nowrap"}}>Clear</button>
               )}
             </div>
-            {filterDate && (
-              <div style={{marginTop:10, fontSize:12, color:"#A78BFA", fontWeight:700}}>
+            {filterDate&&(
+              <div style={{marginTop:10,fontSize:12,color:"#A78BFA",fontWeight:700}}>
                 {new Date(filterDate+"T00:00:00").toLocaleDateString("en-IN",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}
                 {" · "}{fmt(filtered.reduce((s,e)=>s+e.amount,0))}
               </div>
             )}
           </div>
-
           <div className="filter-scroll">
             {["All",...CATEGORIES.map(c=>c.name)].map(cat=>{
               const co=cat!=="All"?getCat(cat):null;
@@ -526,21 +616,16 @@ export default function ExpenseTracker({ user, onLogout }) {
               );
             })}
           </div>
-
           <div className="glass-card">
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
               <div className="card-title" style={{margin:0}}>
-                {filterDate ? new Date(filterDate+"T00:00:00").toLocaleDateString("en-IN",{day:"numeric",month:"short"}) :
-                 filterCat==="All" ? "All Transactions" : filterCat}
+                {filterDate?new Date(filterDate+"T00:00:00").toLocaleDateString("en-IN",{day:"numeric",month:"short"}):filterCat==="All"?"All Transactions":filterCat}
               </div>
               <span style={{fontSize:12,color:"#555"}}>{filtered.length} items · {fmt(filtered.reduce((s,e)=>s+e.amount,0))}</span>
             </div>
-            {filtered.length===0 ? (
-              <EmptyState
-                text={filterDate?"No expenses on this date":"No expenses here"}
-                sub={filterDate?"Try a different date":"Add your first expense!"}
-              />
-            ) : (
+            {filtered.length===0?(
+              <EmptyState text={filterDate?"No expenses on this date":"No expenses here"} sub={filterDate?"Try a different date":"Add your first expense!"}/>
+            ):(
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
                 {filtered.map(exp=>(
                   <ExpenseRow key={exp.id} exp={exp} isNew={exp.id===newId} isDeleting={exp.id===deleteId} onDelete={handleDelete}/>
@@ -551,20 +636,27 @@ export default function ExpenseTracker({ user, onLogout }) {
         </div>
       )}
 
-      {/* ── SIGNATURE ── */}
+      {/* ── SIGNATURE — clicks open LinkedIn ── */}
       <div style={{textAlign:"center", padding:"20px 0 8px", position:"relative", zIndex:1}}>
-        <div style={{
-          display:"inline-flex", alignItems:"center", gap:8,
-          background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)",
-          borderRadius:99, padding:"8px 18px"
-        }}>
-          <span style={{fontSize:12, color:"#333"}}>Developed by</span>
-          <span style={{
-            fontSize:13, fontWeight:900,
-            background:"linear-gradient(135deg,#A78BFA,#4EC9FF)",
-            WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent", letterSpacing:"-0.3px"
-          }}>✦ Sanmay Dodake</span>
-        </div>
+        <a
+          href="https://www.linkedin.com/in/sanmay-dodake"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{textDecoration:"none"}}
+        >
+          <div className="signature-tag">
+            <span style={{fontSize:12, color:"#444"}}>Developed by</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="#0A66C2" style={{flexShrink:0}}>
+              <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+            </svg>
+            <span style={{
+              fontSize:13, fontWeight:900,
+              background:"linear-gradient(135deg,#A78BFA,#4EC9FF)",
+              WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent", letterSpacing:"-0.3px"
+            }}>Sanmay Dodake</span>
+            <span style={{fontSize:10, color:"#555"}}>↗</span>
+          </div>
+        </a>
       </div>
 
       <div style={{height:40}}/>
@@ -658,6 +750,8 @@ textarea.xp-input{height:76px;resize:none;padding-top:13px;}
 .fchip:hover{color:#999!important;border-color:rgba(255,255,255,0.14)!important;}
 .view-all-btn{background:transparent;border:1px solid rgba(255,255,255,0.09);border-radius:12px;color:#555;font-size:13px;font-weight:700;padding:10px 16px;cursor:pointer;font-family:'Outfit',sans-serif;transition:all 0.2s;margin-top:4px;width:100%;}
 .view-all-btn:hover{color:#999!important;border-color:rgba(255,255,255,0.18)!important;}
+.signature-tag{display:inline-flex;align-items:center;gap:7px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:99px;padding:8px 18px;transition:all 0.2s;cursor:pointer;}
+.signature-tag:hover{background:rgba(10,102,194,0.12)!important;border-color:rgba(10,102,194,0.3)!important;transform:translateY(-1px);}
 @keyframes slideIn{from{opacity:0;transform:translateY(-14px) scale(0.97);}to{opacity:1;transform:translateY(0) scale(1);}}
 @keyframes fadeIn{from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:translateY(0);}}
 @keyframes spin{to{transform:rotate(360deg);}}
