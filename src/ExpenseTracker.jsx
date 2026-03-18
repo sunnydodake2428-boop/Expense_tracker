@@ -13,9 +13,14 @@ const CATEGORIES = [
   { name: "Other",             icon: "📦", color: "#C9C9C9", bg: "rgba(201,201,201,0.12)" },
 ];
 
-const getCat = (name) => CATEGORIES.find((c) => c.name === name) || CATEGORIES[7];
-const fmt = (n) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(n);
+const getCat   = (name) => CATEGORIES.find((c) => c.name === name) || CATEGORIES[7];
+const fmt      = (n) => new Intl.NumberFormat("en-IN", { style:"currency", currency:"INR", maximumFractionDigits:2 }).format(n);
 const todayStr = () => new Date().toISOString().split("T")[0];
+const monthKey = (d) => d.toISOString().slice(0, 7); // "YYYY-MM"
+const monthLabel = (ym) => {
+  const [y, m] = ym.split("-");
+  return new Date(+y, +m - 1).toLocaleDateString("en-IN", { month:"short", year:"numeric" });
+};
 
 function AnimatedNumber({ value }) {
   const [display, setDisplay] = useState(value);
@@ -125,6 +130,7 @@ export default function ExpenseTracker({ user, onLogout }) {
   const [newId, setNewId]           = useState(null);
   const [deleteId, setDeleteId]     = useState(null);
   const [showMenu, setShowMenu]     = useState(false);
+  const [selectedMonth, setSelectedMonth] = useState(monthKey(new Date()));
 
   // ── Load from Firebase ──
   useEffect(() => {
@@ -149,11 +155,30 @@ export default function ExpenseTracker({ user, onLogout }) {
     set(expRef, obj);
   }, [expenses, user?.uid, dataLoaded, dbReady]);
 
-  const total     = expenses.reduce((s,e)=>s+e.amount,0);
-  const thisMonth = expenses.filter(e=>e.date?.slice(0,7)===todayStr().slice(0,7)).reduce((s,e)=>s+e.amount,0);
-  const avgPerTxn = expenses.length ? total/expenses.length : 0;
-  const todayExp  = expenses.filter(e=>e.date===todayStr());
-  const todayTotal= todayExp.reduce((s,e)=>s+e.amount,0);
+  // ── Month calculations ──
+  const allTime    = expenses.reduce((s,e)=>s+e.amount, 0);
+  const todayExp   = expenses.filter(e=>e.date===todayStr());
+  const todayTotal = todayExp.reduce((s,e)=>s+e.amount, 0);
+
+  // Get all months that have expenses + current month
+  const monthsWithData = [...new Set([
+    monthKey(new Date()),
+    ...expenses.map(e=>e.date?.slice(0,7)).filter(Boolean)
+  ])].sort((a,b)=>b.localeCompare(a)); // newest first
+
+  const selectedMonthExp   = expenses.filter(e=>e.date?.slice(0,7)===selectedMonth);
+  const selectedMonthTotal = selectedMonthExp.reduce((s,e)=>s+e.amount,0);
+  const selectedMonthCount = selectedMonthExp.length;
+
+  // Previous month for comparison
+  const prevMonthKey = () => {
+    const [y,m] = selectedMonth.split("-").map(Number);
+    const d = new Date(y, m-2);
+    return monthKey(d);
+  };
+  const prevMonthTotal = expenses.filter(e=>e.date?.slice(0,7)===prevMonthKey()).reduce((s,e)=>s+e.amount,0);
+  const monthDiff = selectedMonthTotal - prevMonthTotal;
+  const isCurrentMonth = selectedMonth === monthKey(new Date());
 
   const handleAdd = () => {
     const e = {};
@@ -172,13 +197,12 @@ export default function ExpenseTracker({ user, onLogout }) {
     setTimeout(()=>{ setExpenses(prev=>prev.filter(e=>e.id!==id)); setDeleteId(null); },380);
   };
 
-  // History filtering — by category AND date
   const filtered = expenses
-    .filter(e => filterCat==="All" || e.category===filterCat)
-    .filter(e => !filterDate || e.date===filterDate);
+    .filter(e=>filterCat==="All"||e.category===filterCat)
+    .filter(e=>!filterDate||e.date===filterDate);
 
   const catTotals = CATEGORIES.map(cat=>({
-    ...cat, total:expenses.filter(e=>e.category===cat.name).reduce((s,e)=>s+e.amount,0)
+    ...cat, total:selectedMonthExp.filter(e=>e.category===cat.name).reduce((s,e)=>s+e.amount,0)
   })).filter(c=>c.total>0).sort((a,b)=>b.total-a.total);
 
   const initials = (user?.name||"U").split(" ").map(n=>n[0]).join("").toUpperCase().slice(0,2);
@@ -226,22 +250,64 @@ export default function ExpenseTracker({ user, onLogout }) {
         </div>
       </header>
 
-      {/* ── HERO ── */}
+      {/* ── HERO — shows selected month ── */}
       <div className="hero-card">
         <div className="hero-glow"/>
         <div className="hero-greeting">Hi, {user?.name?.split(" ")[0]||"there"} 👋</div>
-        <div className="hero-label">Total Expenses</div>
-        <div className="hero-amount"><AnimatedNumber value={total}/></div>
+        <div className="hero-label">
+          {isCurrentMonth ? "This Month's Expenses" : `${monthLabel(selectedMonth)} Expenses`}
+        </div>
+        <div className="hero-amount"><AnimatedNumber value={selectedMonthTotal}/></div>
+
+        {/* Month comparison badge */}
+        {prevMonthTotal > 0 && (
+          <div style={{marginBottom:16}}>
+            <span style={{
+              fontSize:11, fontWeight:700, padding:"3px 10px", borderRadius:99,
+              background: monthDiff > 0 ? "rgba(255,107,107,0.15)" : "rgba(6,214,160,0.15)",
+              color: monthDiff > 0 ? "#FF6B6B" : "#06D6A0",
+              border: `1px solid ${monthDiff > 0 ? "rgba(255,107,107,0.3)" : "rgba(6,214,160,0.3)"}`
+            }}>
+              {monthDiff > 0 ? "▲" : "▼"} {fmt(Math.abs(monthDiff))} vs last month
+            </span>
+          </div>
+        )}
+
         <div className="hero-stats">
-          <div className="hero-stat"><span className="hstat-label">This Month</span><span className="hstat-val">{fmt(thisMonth)}</span></div>
+          <div className="hero-stat">
+            <span className="hstat-label">Transactions</span>
+            <span className="hstat-val">{selectedMonthCount}</span>
+          </div>
           <div className="hero-divider"/>
-          <div className="hero-stat"><span className="hstat-label">Transactions</span><span className="hstat-val">{expenses.length}</span></div>
+          <div className="hero-stat">
+            <span className="hstat-label">Daily Avg</span>
+            <span className="hstat-val">{fmt(selectedMonthCount ? selectedMonthTotal / new Date(selectedMonth.split("-")[0], selectedMonth.split("-")[1], 0).getDate() : 0)}</span>
+          </div>
           <div className="hero-divider"/>
-          <div className="hero-stat"><span className="hstat-label">Avg / txn</span><span className="hstat-val">{fmt(avgPerTxn)}</span></div>
+          <div className="hero-stat">
+            <span className="hstat-label">All Time</span>
+            <span className="hstat-val">{fmt(allTime)}</span>
+          </div>
         </div>
       </div>
 
-      {/* ── TABS ── */}
+      {/* ── MONTH TABS ── */}
+      <div className="month-scroll">
+        {monthsWithData.map(ym => {
+          const mTotal = expenses.filter(e=>e.date?.slice(0,7)===ym).reduce((s,e)=>s+e.amount,0);
+          const isActive = ym === selectedMonth;
+          const isCurrent = ym === monthKey(new Date());
+          return (
+            <button key={ym} className={`month-chip ${isActive?"month-chip-active":""}`}
+              onClick={()=>setSelectedMonth(ym)}>
+              <span className="month-chip-label">{isCurrent ? "This Month" : monthLabel(ym)}</span>
+              <span className="month-chip-amt" style={{color: isActive?"#A78BFA":"#555"}}>{fmt(mTotal)}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ── MAIN TABS ── */}
       <div className="tabbar">
         {TABS.map(t=>(
           <button key={t.id} className={`tab ${tab===t.id?"tab-active":""}`} onClick={()=>setTab(t.id)}>
@@ -254,10 +320,13 @@ export default function ExpenseTracker({ user, onLogout }) {
       {tab==="dashboard" && (
         <div className="fade-in">
 
-          {/* Spending Breakdown */}
+          {/* Spending Breakdown — filtered to selected month */}
           <div className="glass-card">
-            <div className="card-title">Spending Breakdown</div>
-            <DonutChart expenses={expenses}/>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
+              <div className="card-title" style={{margin:0}}>Spending Breakdown</div>
+              <span style={{fontSize:11,color:"#555",fontWeight:600}}>{monthLabel(selectedMonth)}</span>
+            </div>
+            <DonutChart expenses={selectedMonthExp}/>
             {catTotals.length>0 && (
               <div style={{marginTop:24,display:"flex",flexDirection:"column",gap:12}}>
                 {catTotals.slice(0,6).map(cat=>(
@@ -266,62 +335,110 @@ export default function ExpenseTracker({ user, onLogout }) {
                       <span style={{fontSize:13,color:"#bbb"}}>{cat.icon} {cat.name}</span>
                       <span style={{fontSize:13,fontWeight:800,color:cat.color}}>{fmt(cat.total)}</span>
                     </div>
-                    <MiniBar percent={(cat.total/total)*100} color={cat.color}/>
+                    <MiniBar percent={(cat.total/selectedMonthTotal)*100} color={cat.color}/>
                   </div>
                 ))}
               </div>
             )}
+            {catTotals.length===0 && <EmptyState text="No spending this month" sub="Add expenses to see breakdown"/>}
           </div>
 
-          {/* Today's Expenses */}
-          <div className="glass-card">
-            <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18}}>
-              <div className="card-title" style={{margin:0}}>Today's Expenses</div>
-              <span style={{fontSize:11, color:"#555", fontWeight:600}}>
-                {new Date().toLocaleDateString("en-IN",{weekday:"short",day:"numeric",month:"short"})}
-              </span>
-            </div>
-            {todayExp.length === 0 ? (
-              <div style={{textAlign:"center", padding:"20px 0"}}>
-                <div style={{fontSize:32, marginBottom:8}}>☀️</div>
-                <p style={{margin:0, fontSize:13, color:"#555"}}>No expenses today</p>
-                <p style={{margin:"4px 0 0", fontSize:11, color:"#333"}}>Add your first expense of the day!</p>
+          {/* Today's Expenses — only on current month view */}
+          {isCurrentMonth && (
+            <div className="glass-card">
+              <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18}}>
+                <div className="card-title" style={{margin:0}}>Today's Expenses</div>
+                <span style={{fontSize:11, color:"#555", fontWeight:600}}>
+                  {new Date().toLocaleDateString("en-IN",{weekday:"short",day:"numeric",month:"short"})}
+                </span>
               </div>
-            ) : (
-              <>
-                <div style={{display:"flex", flexDirection:"column", gap:10}}>
-                  {todayExp.map(exp=>(
-                    <ExpenseRow key={exp.id} exp={exp} isNew={exp.id===newId} isDeleting={exp.id===deleteId} onDelete={handleDelete}/>
-                  ))}
+              {todayExp.length === 0 ? (
+                <div style={{textAlign:"center", padding:"20px 0"}}>
+                  <div style={{fontSize:32, marginBottom:8}}>☀️</div>
+                  <p style={{margin:0, fontSize:13, color:"#555"}}>No expenses today</p>
+                  <p style={{margin:"4px 0 0", fontSize:11, color:"#333"}}>Add your first expense of the day!</p>
                 </div>
-                <div style={{
-                  marginTop:14, padding:"10px 14px", borderRadius:12,
-                  background:"rgba(167,139,250,0.08)", border:"1px solid rgba(167,139,250,0.15)",
-                  display:"flex", justifyContent:"space-between", alignItems:"center"
-                }}>
-                  <span style={{fontSize:12, color:"#888"}}>Today's Total</span>
-                  <span style={{fontSize:15, fontWeight:900, color:"#A78BFA"}}>{fmt(todayTotal)}</span>
-                </div>
-              </>
-            )}
-          </div>
+              ) : (
+                <>
+                  <div style={{display:"flex", flexDirection:"column", gap:10}}>
+                    {todayExp.map(exp=>(
+                      <ExpenseRow key={exp.id} exp={exp} isNew={exp.id===newId} isDeleting={exp.id===deleteId} onDelete={handleDelete}/>
+                    ))}
+                  </div>
+                  <div style={{
+                    marginTop:14, padding:"10px 14px", borderRadius:12,
+                    background:"rgba(167,139,250,0.08)", border:"1px solid rgba(167,139,250,0.15)",
+                    display:"flex", justifyContent:"space-between", alignItems:"center"
+                  }}>
+                    <span style={{fontSize:12, color:"#888"}}>Today's Total</span>
+                    <span style={{fontSize:15, fontWeight:900, color:"#A78BFA"}}>{fmt(todayTotal)}</span>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
-          {/* Recent Transactions */}
+          {/* Recent Transactions for selected month */}
           <div className="glass-card">
-            <div className="card-title">Recent Transactions</div>
-            {expenses.length===0 ? <EmptyState/> : (
+            <div className="card-title">
+              {isCurrentMonth ? "Recent Transactions" : `${monthLabel(selectedMonth)} Transactions`}
+            </div>
+            {selectedMonthExp.length===0 ? (
+              <EmptyState text="No transactions this month" sub="Switch month or add new expenses"/>
+            ) : (
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                {expenses.slice(0,5).map(exp=>(
+                {selectedMonthExp.slice(0,5).map(exp=>(
                   <ExpenseRow key={exp.id} exp={exp} isNew={exp.id===newId} isDeleting={exp.id===deleteId} onDelete={handleDelete}/>
                 ))}
-                {expenses.length>5 && (
+                {selectedMonthExp.length>5 && (
                   <button className="view-all-btn" onClick={()=>setTab("history")}>
-                    View all {expenses.length} transactions →
+                    View all {selectedMonthExp.length} transactions →
                   </button>
                 )}
               </div>
             )}
           </div>
+
+          {/* Month-to-month summary card */}
+          {monthsWithData.length > 1 && (
+            <div className="glass-card">
+              <div className="card-title">Month to Month</div>
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                {monthsWithData.slice(0,6).map(ym=>{
+                  const mTotal = expenses.filter(e=>e.date?.slice(0,7)===ym).reduce((s,e)=>s+e.amount,0);
+                  const mCount = expenses.filter(e=>e.date?.slice(0,7)===ym).length;
+                  const maxTotal = Math.max(...monthsWithData.map(m=>expenses.filter(e=>e.date?.slice(0,7)===m).reduce((s,e)=>s+e.amount,0)));
+                  const isCur = ym===monthKey(new Date());
+                  const isSel = ym===selectedMonth;
+                  return (
+                    <button key={ym} onClick={()=>setSelectedMonth(ym)} style={{
+                      background: isSel?"rgba(167,139,250,0.08)":"transparent",
+                      border: isSel?"1px solid rgba(167,139,250,0.2)":"1px solid transparent",
+                      borderRadius:14, padding:"10px 12px", cursor:"pointer", textAlign:"left"
+                    }}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                        <span style={{fontSize:13,color: isSel?"#A78BFA":"#bbb",fontWeight:700}}>
+                          {isCur?"This Month":monthLabel(ym)}
+                        </span>
+                        <div style={{textAlign:"right"}}>
+                          <span style={{fontSize:14,fontWeight:900,color: isSel?"#A78BFA":"#ccc"}}>{fmt(mTotal)}</span>
+                          <span style={{fontSize:10,color:"#444",marginLeft:8}}>{mCount} txns</span>
+                        </div>
+                      </div>
+                      <div style={{height:4,borderRadius:99,background:"rgba(255,255,255,0.05)",overflow:"hidden"}}>
+                        <div style={{
+                          height:"100%", borderRadius:99,
+                          width:`${maxTotal>0?(mTotal/maxTotal)*100:0}%`,
+                          background: isSel?"linear-gradient(90deg,#A78BFA,#4EC9FF)":"rgba(255,255,255,0.1)",
+                          transition:"width 0.8s cubic-bezier(.22,1,.36,1)"
+                        }}/>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
         </div>
       )}
@@ -333,14 +450,14 @@ export default function ExpenseTracker({ user, onLogout }) {
           <div className="form-group">
             <label className="form-label">Title</label>
             <input className={`xp-input ${errors.title?"xp-input-err":""}`} placeholder="e.g. Dinner with friends"
-              value={form.title} onChange={e=>{setForm({...form,title:e.target.value});setErrors({...errors,title:""}); }}/>
+              value={form.title} onChange={e=>{setForm({...form,title:e.target.value});setErrors({...errors,title:""});}}/>
             {errors.title && <span className="err-msg">{errors.title}</span>}
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
             <div className="form-group">
               <label className="form-label">Amount (₹)</label>
               <input className={`xp-input ${errors.amount?"xp-input-err":""}`} placeholder="0.00" type="number" min="0"
-                value={form.amount} onChange={e=>{setForm({...form,amount:e.target.value});setErrors({...errors,amount:""}); }}/>
+                value={form.amount} onChange={e=>{setForm({...form,amount:e.target.value});setErrors({...errors,amount:""});}}/>
               {errors.amount && <span className="err-msg">{errors.amount}</span>}
             </div>
             <div className="form-group">
@@ -375,11 +492,9 @@ export default function ExpenseTracker({ user, onLogout }) {
       {/* ══════ HISTORY ══════ */}
       {tab==="history" && (
         <div className="fade-in">
-
-          {/* Date picker */}
           <div className="glass-card" style={{padding:"16px 18px", marginBottom:12}}>
             <div style={{display:"flex", alignItems:"center", gap:12}}>
-              <span style={{fontSize:11, fontWeight:800, color:"#555", letterSpacing:1, textTransform:"uppercase", whiteSpace:"nowrap"}}>📅 Pick Date</span>
+              <span style={{fontSize:11, fontWeight:800, color:"#555", letterSpacing:1, textTransform:"uppercase", whiteSpace:"nowrap"}}>📅 Date</span>
               <input className="xp-input" type="date" value={filterDate}
                 style={{flex:1, padding:"9px 14px", fontSize:13}}
                 onChange={e=>setFilterDate(e.target.value)}/>
@@ -393,13 +508,12 @@ export default function ExpenseTracker({ user, onLogout }) {
             </div>
             {filterDate && (
               <div style={{marginTop:10, fontSize:12, color:"#A78BFA", fontWeight:700}}>
-                Showing: {new Date(filterDate+"T00:00:00").toLocaleDateString("en-IN",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}
+                {new Date(filterDate+"T00:00:00").toLocaleDateString("en-IN",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}
                 {" · "}{fmt(filtered.reduce((s,e)=>s+e.amount,0))}
               </div>
             )}
           </div>
 
-          {/* Category filter chips */}
           <div className="filter-scroll">
             {["All",...CATEGORIES.map(c=>c.name)].map(cat=>{
               const co=cat!=="All"?getCat(cat):null;
@@ -481,16 +595,24 @@ body{margin:0;background:#070710;}
 .user-menu-divider{height:1px;background:rgba(255,255,255,0.07);margin:10px 0;}
 .user-menu-logout{width:100%;padding:9px 12px;border-radius:10px;text-align:left;background:rgba(255,60,60,0.08);border:1px solid rgba(255,60,60,0.15);color:#ff6b6b;font-size:13px;font-weight:700;cursor:pointer;font-family:'Outfit',sans-serif;transition:all 0.2s;}
 .user-menu-logout:hover{background:rgba(255,60,60,0.2)!important;}
-.hero-card{position:relative;background:linear-gradient(145deg,rgba(167,139,250,0.14) 0%,rgba(78,201,255,0.09) 50%,rgba(6,214,160,0.07) 100%);border:1px solid rgba(167,139,250,0.18);border-radius:28px;padding:28px 28px 24px;margin-bottom:20px;z-index:1;overflow:hidden;backdrop-filter:blur(20px);}
+.hero-card{position:relative;background:linear-gradient(145deg,rgba(167,139,250,0.14) 0%,rgba(78,201,255,0.09) 50%,rgba(6,214,160,0.07) 100%);border:1px solid rgba(167,139,250,0.18);border-radius:28px;padding:28px 28px 24px;margin-bottom:14px;z-index:1;overflow:hidden;backdrop-filter:blur(20px);}
 .hero-glow{position:absolute;top:-70px;right:-70px;width:220px;height:220px;background:radial-gradient(circle,rgba(167,139,250,0.22) 0%,transparent 70%);border-radius:50%;pointer-events:none;}
 .hero-greeting{font-size:13px;color:#888;margin-bottom:6px;font-weight:600;}
 .hero-label{font-size:11px;color:#666;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px;}
-.hero-amount{font-size:44px;font-weight:900;letter-spacing:-2px;margin-bottom:22px;background:linear-gradient(135deg,#fff 0%,rgba(255,255,255,0.65) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+.hero-amount{font-size:44px;font-weight:900;letter-spacing:-2px;margin-bottom:14px;background:linear-gradient(135deg,#fff 0%,rgba(255,255,255,0.65) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
 .hero-stats{display:flex;align-items:center;}
 .hero-stat{flex:1;display:flex;flex-direction:column;gap:4px;}
 .hstat-label{font-size:10px;color:#4a4a5a;letter-spacing:0.5px;}
 .hstat-val{font-size:14px;font-weight:800;color:#ccc;}
 .hero-divider{width:1px;height:32px;background:rgba(255,255,255,0.07);margin:0 16px;}
+.month-scroll{display:flex;gap:8px;overflow-x:auto;padding-bottom:10px;margin-bottom:14px;scrollbar-width:none;z-index:1;position:relative;}
+.month-scroll::-webkit-scrollbar{display:none;}
+.month-chip{flex-shrink:0;display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:9px 14px;border-radius:14px;background:rgba(255,255,255,0.03);border:1.5px solid rgba(255,255,255,0.06);cursor:pointer;transition:all 0.2s;font-family:'Outfit',sans-serif;}
+.month-chip:hover{border-color:rgba(255,255,255,0.12)!important;background:rgba(255,255,255,0.06)!important;}
+.month-chip-active{background:rgba(167,139,250,0.1)!important;border-color:rgba(167,139,250,0.35)!important;}
+.month-chip-label{font-size:11px;font-weight:800;color:#888;letter-spacing:0.3px;}
+.month-chip-active .month-chip-label{color:#c4b5fd!important;}
+.month-chip-amt{font-size:13px;font-weight:900;}
 .tabbar{display:flex;gap:6px;margin-bottom:20px;z-index:1;position:relative;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.055);border-radius:18px;padding:5px;}
 .tab{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:11px 0;border:none;border-radius:13px;background:transparent;color:#484860;font-size:13px;font-weight:700;cursor:pointer;transition:all 0.25s cubic-bezier(.22,1,.36,1);font-family:'Outfit',sans-serif;}
 .tab:hover{color:#888;}
